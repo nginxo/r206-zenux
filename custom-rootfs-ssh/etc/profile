@@ -2,6 +2,10 @@ export PATH="/sbin:/system/sbin:/system/bin:/system/xbin:/vendor/bin:/app/bin:/b
 export LD_LIBRARY_PATH="/vendor/lib:/system/lib:/app/lib"
 export HOME="/root"
 export USER="root"
-export PS1='r206:\w # '
+export PS1='$PWD $ '
 cd /
 echo "Project Zenux running on R206 // exertia.it"
+
+if [ -x /sbin/zenux_sh ] && [ "$0" = "-sh" ]; then
+    exec /sbin/zenux_sh
+fi
