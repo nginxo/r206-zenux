@@ -1,0 +1,27 @@
+Generating public/private ed25519 key pair.
+Enter passphrase (empty for no passphrase):
+Enter same passphrase again:
+Your identification has been saved in r206-root-ed25519
+Your public key has been saved in r206-root-ed25519.pub
+The key fingerprint is:
+SHA256:TV6vE9t6tL8EhiPuGb2gfC7fXM+Uo/wTMy8Xr3Y5BEY r206-root
+The key's randomart image is:
++--[ED25519 256]--+
+|                 |
+|             E   |
+|          . o    |
+|         + ..+   |
+|        S.ooooo  |
+|        . o o=o*.|
+|         + .+oo*O|
+|      ..o.* +o@+*|
+|       o== +.=o@=|
++----[SHA256]-----+
+
+
+
+  -f custom-rootfs-ssh/etc/dropbear/dropbear_ed25519_host_key
+Generating 256 bit ed25519 key, this may take a while...
+Public key portion is:
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXXF7pgEIaCKvctbNTyPVnXAR5OVV9OOMW805t5r2mv root@ASRock
+Fingerprint: SHA256:mBWSZ7PIbeiAQOvKhxqR/NrJDaB2Pf0pZ6x999Ap2/c

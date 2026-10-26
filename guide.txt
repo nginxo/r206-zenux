@@ -1,0 +1,59 @@
+================================================================================
+ GUIDA DEFINITIVA: FLASHING E ACCESSO SSH INTERATTIVO SU VODAFONE R206
+================================================================================
+
+1. PROCEDURA COMPLETAMENTE AUTOMATIZZATA:
+--------------------------------------------------------------------------------
+Esegui semplicemente lo script all-in-one con i permessi di root:
+
+    sudo ./flash_fixed_image.sh
+
+Lo script si occuperà in sequenza di:
+ - Rigenerare l'immagine boot.img corretta (kernel stock + dropbear patchato)
+ - Inviare il comando AT^GODLOAD per riavviare il modem in Download Mode
+ - Rilevare la porta di flash (/dev/ttyUSB2)
+ - Flashare la partizione 05 (Kernel_R1)
+ - Attendere il riavvio del dispositivo
+ - Configurare l'interfaccia di rete USB (wwp13s0u4 / wwx...) con IP 192.168.0.100
+ - Verificare la connettività con ping 192.168.0.1
+
+
+2. PROCEDURA MANUALE (PASSO-PASSO):
+--------------------------------------------------------------------------------
+A) Riavvia in Download Mode:
+    sudo python3 reboot_dl_mode.py
+
+    Attendi finché non vedi /dev/ttyUSB2:
+    ls -l /dev/ttyUSB*
+
+B) Esegui il flash della partizione Kernel_R1:
+    sudo ./balongflash/balong_flash -n -p /dev/ttyUSB2 kernel-ssh-preview-pty
+
+    Attendi che il caricamento arrivi al 100% e il dispositivo si riavvii.
+
+C) Configura la scheda di rete USB:
+    IFACE=wwp13s0u4   # oppure wwx0c5b8f279a64
+    sudo ip link set "$IFACE" up
+    sudo ip addr replace 192.168.0.100/24 dev "$IFACE"
+    ping -c 3 -W 2 192.168.0.1
+
+D) Connessione SSH:
+    ssh -i r206-root-ed25519 -p 2222 root@192.168.0.1
+
+
+3. COSA ERA SUCCESSO CON IL KERNEL COMPILATO (LED WIFI BLU E USB MORTA):
+--------------------------------------------------------------------------------
+- Il LED Wi-Fi blu indicava che il kernel e il sistema operativo Android si erano
+  avviati correttamente e avevano acceso il chip Wi-Fi.
+- Tuttavia, la periferica USB del chipset Balong V3R2 CS non usa i driver gadget
+  standard di Linux upstream, bensì un driver proprietario Huawei chiamato 'jusb'
+  (situato nel kernel stock sotto drivers/jusb/).
+- Huawei ha rimosso intenzionalmente l'intera cartella 'drivers/jusb' dal pacchetto
+  sorgente GPL distribuito pubblicamente.
+- Di conseguenza, compilando il kernel dal tarball GPL, il driver periferica USB
+  mancava completamente e la porta USB hardware è rimasta spenta/in host-only mode.
+- La soluzione definitiva e sicura consiste nell'utilizzare il KERNEL STOCK originale
+  (che integra 'jusb' e garantisce il perfetto funzionamento di tutte le porte USB e
+  della rete NCM) abbinato a DROPBEAR PATCHATO a livello user-space, con fallback
+  automatico su shell interattiva da pipe (con flag -i e prompt configurato).
+================================================================================
