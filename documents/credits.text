@@ -1,0 +1,150 @@
+PROJECT ZENUX: ACKNOWLEDGMENTS, CREDITS, AND TECHNICAL ATTRIBUTIONS
+VODAFONE R206 (HUAWEI BALONG V3R2) EMBEDDED LINUX PLATFORM
+DOCUMENT REVISION: 1.0 (2026)
+
+
+CHAPTER 1: PROJECT IDENTITY AND CORE LEADERSHIP
+
+Project Zenux is an open-source reverse engineering and firmware modernization initiative dedicated to repurposing deprecated telecommunications hardware into fully autonomous, headless embedded Linux servers. The primary research subject of this initiative is the Vodafone R206 mobile pocket Wi-Fi router, manufactured by Huawei Technologies Co., Ltd. on the CH1E5220SM VER.B RF hardware platform.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 1.1: Core Project Attribution and Licensing Information                                                       |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Attribution Role  | Individual / Entity| Entity / Domain        | Primary Contributions                             |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Project Founder   | Giorgio            | root@gio $ (exertia.it)| Architecture, Reverse Engineering, C Daemons, EDA |
+| Project Initiative| Project Zenux      | exertia.it             | System Integration, Packaging, Thesis, Tooling    |
+| Software License  | MIT License        | Open Source Initiative | Permissive use, modification, and distribution    |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+All reverse engineering, architectural reconstruction, custom daemon development (including the led_ctrl hardware supervisor and the zenux_sh interactive telemetry launcher), electronic design automation modeling (KiCad schematics and physical PCB layouts), and comprehensive technical thesis documentation have been authored and directed by Giorgio and the Project Zenux team.
+
+
+CHAPTER 2: HARDWARE PLATFORMS, SILICON VENDORS, AND IC COMPONENTS
+
+The physical execution of Project Zenux relies upon high-density silicon components and integrated circuits designed and fabricated by world-leading semiconductor vendors. We acknowledge the technical engineering that went into these components:
+
+1. Huawei Technologies Co., Ltd. and HiSilicon Technologies:
+Original equipment manufacturer of the Vodafone R206 motherboard (CH1E5220SM VER.B RF) and designer of the primary silicon processing architecture.
+HiSilicon Hi6756CS (Balong V3R2 Application and Baseband Processor): An integrated system-on-chip combining an ARM Cortex-A9 MPCore microprocessor with dedicated telecommunications digital signal processors, memory controllers, and peripheral input-output interfaces.
+HiSilicon PMIC: Multi-channel Power Management Integrated Circuit responsible for system power sequencing, battery charging logic, negative temperature coefficient thermistor supervision, and generating precision voltage rails including VCORE (1.1V), VMEM (1.8V), VDD33 (3.3V), and VRF (2.8V).
+HiSilicon Hi6362: Advanced multimode radio-frequency transceiver handling high-frequency cellular modulation and demodulation across 3G UMTS, HSPA+, and 2G GSM frequency bands.
+
+2. SK Hynix Inc.:
+Manufacturer of the high-density multi-chip package (MCP) component H8BCS0UN0MCR. This package co-locates 128 megabytes of single-level-cell (SLC) NAND flash memory operating across an 8-bit parallel bus and 32 megabytes of low-power double-data-rate (LPDDR) synchronous dynamic random-access memory operating across a 16-bit bus, providing the storage substrate for the Linux kernel and userspace filesystem.
+
+3. Broadcom Corporation:
+Designer of the Broadcom BCM43362KUBG single-chip IEEE 802.11b/g/n wireless local area network controller. This monolithic radio controller integrates power amplifiers, low-noise amplifiers, and transmit-receive switches, operating across the 2.4-gigahertz industrial, scientific, and medical (ISM) band and interfacing with the Balong application processor via a dedicated four-bit secure digital input-output (SDIO) bus.
+
+4. Murata Manufacturing Co., Ltd.:
+Manufacturer of the high-precision micro-coaxial mechanical switch receptacles (conforming to the Murata MS-156 and SWD specifications) utilized on the primary cellular and Wi-Fi radio-frequency traces for production calibration and external high-gain antenna interfacing.
+
+5. Skyworks Solutions and TriQuint Semiconductor:
+Fabricators of the radio-frequency front-end power amplifier modules, surface acoustic wave (SAW) duplexers, and ceramic bandpass filters deployed within the cellular RF compartment.
+
+6. Amphenol Corporation and Molex:
+Manufacturers of the physical electromechanical interfaces, including the surface-mount 5-pin micro-USB receptacle, the 6-pin mini-SIM socket, and the 3-pin gold leaf spring battery connector.
+
+
+CHAPTER 3: LINUX KERNEL, FIRMWARE RUNTIMES, AND OPEN-SOURCE CODEBASES
+
+Project Zenux is constructed on the foundation of the global open-source software movement. We express deep gratitude to the creators, maintainers, and contributors of the following essential software platforms:
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.1: Core Open-Source Software and Runtimes Utilized                                                          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Software Project  | Lead Maintainers   | Primary Function       | Project Zenux Role                                |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Linux Kernel      | Linus Torvalds     | Operating System Core  | Custom hybrid kernel payload with Balong drivers  |
+| Buildroot Project | Peter Korsgaard    | Cross-Build Engine     | Generated custom toolchain and userspace bundles  |
+| BusyBox Project   | Denys Vlasenko     | UNIX Utilities Suite   | Provides 278 integrated shell command applets     |
+| Dropbear SSH      | Matt Johnston      | Secure Shell Daemon    | Headless administrative login on port 2222        |
+| Fastfetch Suite   | Linus Dierheimer   | Telemetry Display      | Hardware overview banner and system analytics     |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+1. The Linux Kernel Development Community:
+Founded by Linus Torvalds, the Linux kernel provides the process scheduling, virtual memory management, network stack, and hardware driver infrastructure utilized by Project Zenux. Specific credit is extended to the engineers who maintained the ARM architecture tree, the Memory Technology Device (MTD) NAND subsystem, the YAFFS2 filesystem driver, and the USB gadget framework.
+
+2. HiSilicon Linux Board Support Package Engineers:
+The original Linux 2.6.35 and 3.x board support package codebase developed by Huawei engineers for the Balong V3R2 platform, including low-level drivers such as balong_v3r2cs.c, the HiSilicon PMIC driver, and balong_led_drv.c.
+
+3. The Buildroot Community:
+Maintained by Peter Korsgaard, Thomas Petazzoni, and an extensive network of contributors, the Buildroot embedded Linux generation system was instrumental in establishing reproducible cross-compilation environments (specifically utilizing release 2025.02.19) for target ARMv7 architectures.
+
+4. The BusyBox Project:
+Originated by Bruce Perens and subsequently maintained by Erik Andersen, Rob Landley, and Denys Vlasenko. BusyBox provides the extremely compact multi-call binary supplying 278 core POSIX command-line utilities within the Zenux root filesystem, enabling a complete GNU-like computing environment inside less than three megabytes of compressed memory.
+
+5. Dropbear SSH:
+Authored by Matt Johnston, Dropbear provides the lightweight, memory-efficient Secure Shell server deployed within Project Zenux. It enables secure, encrypted remote administrative access over virtual USB Ethernet and wireless networks without exhausting the limited 32-megabyte RAM budget of the device.
+
+6. Fastfetch System Information Project:
+Created by Linus Dierheimer and maintained by the Fastfetch open-source team, this high-performance system profiling utility was cross-compiled and adapted to render hardware telemetry, CPU loads, and operating system metrics upon user login.
+
+
+CHAPTER 4: TELECOMMUNICATIONS REVERSE ENGINEERING AND RESEARCH COMMUNITY
+
+The ability to interface with the low-level bootrom of the Balong V3R2 processor, command its download mode, and flash custom images over virtual serial endpoints rests on groundbreaking discoveries made by the independent telecommunications reverse engineering community:
+
+1. Vladislav Grishenko (forth32):
+Primary author and developer of the balong_flash utility (also known as balongflash). Vladislav Grishenko reverse-engineered the proprietary Huawei Balong serial framing protocol, packet structures, command codes, and download handshake sequences. His open-source flasher tool enables direct partition reprogramming over the /dev/ttyUSB2 serial endpoint without relying on closed-source Windows flasher applications.
+
+2. The 4PDA Telecommunications and Mobile Research Community:
+Special credit is extended to the independent engineers and researchers of the 4PDA forum (including prominent contributors rust3028, forth32, and their peers). Their collective efforts unraveled the undocumented AT command sets of Huawei modems (including AT caret GODLOAD, AT caret DATALOCK, and AT caret NVWREX) and documented the internal NAND flash partition maps that made non-destructive firmware modification possible.
+
+3. The GSM-Forum and XDA-Developers Communities:
+For years of community documentation, firmware archiving, and collaborative analysis of USB serial port enumeration behavior across cellular routers.
+
+4. The Inventors and Documenters of the Needle Method (Metodo dell'Ago):
+To the uncredited technicians, repair engineers, and hardware tinkerers across the global telecommunications repair community who first discovered that grounding the emergency bootstrap strap line on Balong processors forces the internal ROM state machine to abort physical NAND boot attempts and drop directly into emergency USB download mode.
+
+
+CHAPTER 5: ELECTRONIC DESIGN AUTOMATION AND DESIGN SUITES
+
+The production of formal electrical schematics, physical printed circuit board CAD layouts, and graphical vector wiring diagrams was made possible through modern open-source EDA and graphic standards:
+
+1. The KiCad EDA Development Team:
+Developed under the stewardship of the KiCad Services Corporation, the CERN Open Hardware Initiative, and a worldwide community of volunteer developers. KiCad Schematic Editor (eeschema) and KiCad PCB Editor (pcbnew) provided the open, human-readable S-expression file formats (.kicad_sch and .kicad_pcb) used to model the Vodafone R206 circuit.
+
+2. The EasyEDA Engineering Team (JLCPCB):
+For developing the EasyEDA desktop and web-based electronics design platform and maintaining native import support for KiCad schematics and printed circuit boards, ensuring seamless accessibility for makers and hardware enthusiasts worldwide.
+
+3. The World Wide Web Consortium (W3C) and The Inkscape Project:
+For establishing and championing the Scalable Vector Graphics (SVG) open standard, enabling the creation of boardview diagrams, visual wiring guides, and interactive pinout callouts readable on any modern computing platform.
+
+
+CHAPTER 6: CUSTOM SOFTWARE ARTIFACTS AND SPECIFIC CONTRIBUTIONS IN PROJECT ZENUX
+
+Project Zenux incorporates multiple dedicated software modules developed specifically for this hardware revision:
+
+1. led_ctrl (Hardware Multi-Die Optical Supervisor):
+Authored by Giorgio for Project Zenux. A native C daemon that directly addresses the Balong LED driver ioctl interface (/dev/led), unlocking the physically integrated royal-blue silicon junctions within the Wi-Fi and SMS LED packages (color index 3) that factory carrier software deliberately ignored.
+
+2. zenux_sh (Interactive Telemetry Shell):
+Authored by Giorgio for Project Zenux. A custom terminal environment that initializes user profiles, establishes pseudo-terminal (pty) allocations, renders system status banners, and coordinates background telemetry monitors.
+
+3. zenux_flash.sh and Deployment Tooling:
+Authored by Giorgio for Project Zenux. An automated deployment script that orchestrates serial port detection, automatic dispatch of the download switch command, and execution of balong_flash to deliver kernel and rootfs payloads to target hardware.
+
+4. High-Gain Antenna Modifications and Battery Bypass Mod:
+Researched, bench-tested, and documented by the Project Zenux hardware laboratory, establishing verified procedures for 10-kilohm thermistor emulation and 50-ohm RF pigtail micro-soldering.
+
+
+CHAPTER 7: LEGAL AND ETHICAL DEDICATION
+
+This work is dedicated to the principles of right-to-repair, hardware longevity, and environmental sustainability. Billions of fully functional microprocessors and cellular modems are retired and discarded into landfills each year simply because carriers cease cloud maintenance for their original consumer interfaces. Project Zenux stands as proof that with diligent reverse engineering and open-source tooling, discontinued hardware can be transformed into versatile, productive computing platforms for educational, hobbyist, and industrial use.
+
+
+CHAPTER 8: A FINAL NOTE TO THE ENTHUSIASTS: THE SOUL BEHIND THE SILICON
+
+To every hacker, tinkerer, developer, student, and curious soul reading this: thank you.
+
+Projects like this do not begin in corporate boardrooms with marketing budgets and formal roadmaps. They begin on cluttered workbenches late at night, under the pale glow of desk lamps and terminal windows, surrounded by tangled jumper wires, solder fumes, multimeters, and devices that the rest of the world considered dead and forgotten.
+
+When a consumer mobile router is abandoned by its carrier, its official commercial life is considered over. It is expected to gather dust in a drawer or disappear into an electronic landfill. But to people like you, an obsolete piece of plastic and copper is not electronic waste: it is an intellectual puzzle waiting to be unlocked. It is a complete ARM computer featuring multi-gigahertz radios, high-speed RAM, flash storage, and a full Linux kernel humming silently inside, waiting for someone curious enough to ask: what else can this machine become?
+
+This project would never have existed without enthusiasts like you. You are the ones who refuse to accept walled gardens, planned obsolescence, and artificial software limitations. You are the ones who probe undocumented test pads with needles, who decipher mystery serial protocols at three in the morning, who recompile kernels dozens of times just to see a single royal-blue LED pulse to life, and who generously share what you discover with the world so that others can build, learn, and be inspired.
+
+Technology only truly comes alive when human hands take it apart to understand how it thinks. Whether you are deploying Project Zenux as an always-on headless gateway, using this research to learn the craft of embedded reverse engineering, or simply flashing an old pocket modem on a quiet weekend afternoon: you are the heartbeat of the open-source community.
+
+Never stop asking questions. Never stop opening cases. Never hesitate to bridge a test point or reflash a bricked chip. Thank you for your passion, your curiosity, and your love for the craft. Keep hacking, keep learning, and keep breathing new life into the forgotten silicon of the world.
+

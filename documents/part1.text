@@ -1,0 +1,254 @@
+TECHNICAL THESIS ON ARCHITECTURE, REVERSE ENGINEERING, AND FIRMWARE DEVELOPMENT FOR THE VODAFONE R206 (HUAWEI BALONG V3R2)
+
+PART 1: SERIAL INTERFACE ANALYSIS, DOWNLOAD MODE TRANSITION, FLASHING PROTOCOL, AND NAND PARTITION STRUCTURE
+
+
+CHAPTER 1: USB ENUMERATION IN OPERATIONAL MODE, SERIAL PORT IDENTIFICATION, AND THE DISCOVERY OF THE AT COMMAND FOR DOWNLOAD MODE
+
+When the Vodafone R206 mobile Wi-Fi router, built upon the Huawei Balong V3R2 silicon platform featuring an ARM Cortex A9 application processor paired with an integrated baseband modem coprocessor, is powered on and connected to a host workstation via micro USB, the operating system detects a high-speed USB composite peripheral characterized by Vendor ID 12d1 and Product ID 1c05. In Huawei cellular hardware architectures, composite USB devices are designed to serve multiple distinct functional domains concurrently: a high-throughput network endpoint managed by either the CDC Ethernet or CDC NCM kernel drivers, exposing a virtual network interface through which the host and router exchange IP packet traffic, and a cluster of asynchronous virtual serial endpoints driven by the Linux option or usbserial kernel modules.
+
+Upon standard system bootstrap, the Linux kernel USB bus scanner allocates two serial character device nodes within the dev directory, conventionally assigned as ttyUSB0 and ttyUSB1. Discerning which of these two interfaces is designated to receive interactive supervisory instructions and which is allocated to telemetry logging requires a structured methodological analysis of their physical signaling behavior. Virtual serial ports exposed by cellular baseband processors do not exhibit identical functional characteristics. Historically, one port is exclusively dedicated to low-level firmware diagnostics and radio link logging, known as the Trace or Debug port, across which the baseband processor broadcasts unsolicited asynchronous telemetry frames in either proprietary binary or unstructured ASCII formats. Conversely, the secondary interface, designated as the PCUI port, an acronym for Personal Computer User Interface, or AT Command Modem port, connects directly to an in-kernel or userland command parser conforming to the extended Hayes command specification.
+
+To establish the operational identity of each serial endpoint, an engineer opens each respective file descriptor under standard modem line settings: a transmission speed of 115200 baud, eight data bits, no parity bit, and one stop bit in raw mode, explicitly disabling local terminal echo and hardware flow control. Transmitting a baseline synchronization probe consisting of the ASCII characters A and T terminated by a carriage return onto ttyUSB0 yields either an immediate I/O timeout or a sequence of unparsed binary noise, confirming that this interface does not implement an interactive command dispatcher. Repeating the identical sequence on ttyUSB1 produces an immediate response from the router firmware, returning a carriage return, line feed, the ASCII string O K, and a trailing carriage return and line feed. This deterministic behavior formally establishes that ttyUSB1 is the primary supervisory channel through which the host operating system communicates with the router background management services.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 1.1: USB Interface Allocation in Operational Router Mode (VID 12d1, PID 1c05)                                 |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Interface Number  | Host Device Node   | Protocol / Driver      | Operational Function and Characteristics          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Interface 0       | wwp... / wwx...    | CDC Ethernet / NCM     | High-speed virtual network adapter (192.168.0.1)  |
+| Interface 1       | /dev/ttyUSB0       | USB Serial (option)    | Asynchronous baseband telemetry and trace output  |
+| Interface 2       | /dev/ttyUSB1       | USB Serial (option)    | Interactive PCUI / AT command supervisor endpoint |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+The discovery of the specific proprietary instruction required to force the processor to abandon its operational state and reboot into low-level maintenance mode, internally known as Download Mode or DL Mode, is rooted in the extensive historical reverse engineering of Huawei baseband firmware architectures. Huawei cellular platforms implement a proprietary extension to the standard 3GPP AT command grammar, universally identified by a caret symbol positioned immediately following the AT prefix. By conducting static disassembly of the administrative daemons residing within the app partition of the stock firmware, particularly the ats executable responsible for AT command routing, as well as its accompanying shared objects libatproxy.so and libwebsdk atapi.so, and correlating these routines with historical disclosures from the embedded telecommunications research community such as the forth32 project on Balong chipsets, an extensive catalog of non-standard supervisory commands was identified.
+
+Within this proprietary catalog, the command AT caret GODLOAD serves as the designated diagnostic instruction that triggers a hardware execution downgrade into the emergency Bootrom flasher. When this command string is transmitted across ttyUSB1, the ats server validates the syntactic token, verifies that execution privileges permit hardware state modification, and returns an affirmative OK acknowledgment to the host. Immediately following transmission of this acknowledgment, the daemon triggers an ioctl call into the kernel power management and clock control subsystem of the Balong chipset. A persistent state flag is written into a dedicated region of battery-backed scratch SRAM or non-volatile baseband registers, instructing the hardware reset vector that the subsequent power-on cycle must bypass normal NAND boot routines and halt within the primary ROM mask. The processor then terminates external USB transceiver pull-up resistors, simulating a physical disconnection, and invokes a warm hardware reset, causing all light-emitting diodes on the front chassis of the router to enter a synchronous continuous blinking state.
+
+
+CHAPTER 2: INTERNAL MECHANICS OF DOWNLOAD MODE AND AVAILABLE AT COMMAND SPECIFICATIONS
+
+Download Mode represents an execution environment fundamentally dissociated from the conventional Linux operating system. In this operational phase, the Linux kernel is completely absent from physical random-access memory, the initramfs filesystem archive remains unpacked, and the Android userland framework is entirely inert. The ARM Cortex A9 central processing unit operates in an elementary bare-metal state, executing code stored immutably in internal on-chip Bootrom or executing the earliest stages of the M3Boot loader residing in the initial sectors of the NAND flash. The execution context is stripped to bare essentials: memory management unit tables are either disabled or mapped via flat identity addresses, and the system executes only the minimal device drivers necessary to drive the NAND flash controller and the peripheral USB controller in device mode.
+
+From a software architectural perspective, Download Mode functions as a hierarchical two-tier state machine. The primary tier functions as an ASCII terminal parser capable of processing a strictly bounded subset of maintenance AT commands, designed to verify protocol revisions, synchronize physical line parameters, and negotiate cryptographic access privileges with the host flashing utility. The secondary tier, conditionally unlocked upon the successful conclusion of the primary phase, permanently disables the ASCII interpreter and activates a high-throughput binary packet state machine governed by a specialized High-Level Data Link Control framing protocol, engineered to maximize raw flashing throughput directly into the physical flash memory blocks.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 2.1: Pre-HDLC AT Command Reference in Download Mode                                                           |
++-----------------------+--------------------+------------------------+-----------------------------------------------+
+| Command Name          | ASCII String       | Expected Response      | Functional Description and State Action       |
++-----------------------+--------------------+------------------------+-----------------------------------------------+
+| Line Synchronization  | AT\r               | \r\nOK\r\n             | Calibrates serial line and validates listener |
+| Protocol Query        | AT^DLOADVER?\r     | \r\n2.0\r\n\r\nOK\r\n  | Validates flasher protocol revision (v2.0)    |
+| Signature Validation  | AT^SIGNVER=...\r   | \r\n0\r\n\r\nOK\r\n    | Submits carrier cryptographic verification    |
+| Mode Switch           | AT^DATAMODE\r      | \r\nOK\r\n             | Transitions port from ASCII to binary HDLC    |
+| Hardware Reset        | AT^RESET\r         | \r\nOK\r\n             | Aborts download mode and forces system reboot |
++-----------------------+--------------------+------------------------+-----------------------------------------------+
+
+The catalog of AT commands recognized during the initial ASCII phase of Download Mode is deliberately constrained. The elementary AT probe serves as a line heartbeat, confirming that the USB serial endpoint has completed host enumeration and is prepared to accept subsequent parameter blocks. 
+
+The command AT caret DLOADVER question mark performs an imperative query concerning the revision of the download protocol implemented within the Bootrom microcode. On devices built on the Balong V3R2 platform, the Bootrom returns the numerical string 2.0 followed by OK. Validation of this string is an indispensable prerequisite for host flashing software such as balong flash. Different iterations of the Balong architecture implement differing packet header layouts, differing block chunk boundaries, and incompatible error-handling structures; attempting to flash a version 2.0 device using protocols designed for legacy version 1.0 or newer Balong V7 specifications results in immediate rejected writes or silent NAND corruption.
+
+The command AT caret SIGNVER governs cryptographic firmware signature enforcement on devices subject to carrier lock or secure boot validation. When commercial firmware packages are locked with cryptographic certificates, this command is dispatched with four comma-delimited parameters: the firmware component type, an operational configuration flag, a sixty-four-character hexadecimal representation of the SHA 256 hash of the OEM public signing key, and the total byte length of the digital signature block appended to the firmware container. When the hardware validates the hash against its internal one-time-programmable fuses or accepts an unlocked state, it returns the numeric value zero followed by OK, opening the internal hardware write locks protecting the NAND flash blocks.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 2.2: Parameters for the AT^SIGNVER Command Structure                                                          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Parameter Field   | Data Format        | Typical Value          | Functional Definition                             |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Firmware Type     | Decimal Integer    | 1 (FW), 2 (ISO), 4 (UI)| Identifies component classification being signed  |
+| Verification Flag | Decimal Integer    | 0                      | Standard operating verification mode              |
+| Public Key Hash   | 64-char Hex String | SHA-256 Hash Digest    | Cryptographic public key fingerprint              |
+| Signature Length  | Decimal Integer    | Variable (e.g. 2958)   | Total byte length of appended cryptographic block |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+The command AT caret DATAMODE is the pivotal transitional directive of the flashing sequence. Upon parsing this instruction, the processor executes teardown routines on the ASCII parser, allocates circular DMA reception buffers inside internal SRAM for incoming binary chunks, initializes hardware or algorithmic CRC-16 computation engines, and returns a final affirmative OK acknowledgment. From the instant the trailing line feed of this response leaves the USB transceiver FIFO, the serial port ceases to interpret human-readable ASCII text, and will permanently ignore any standard characters, responding solely to validly framed binary HDLC packets.
+
+Finally, the command AT caret RESET provides a mechanism to abandon the flashing workflow cleanly during the ASCII negotiation phase. When received, the processor clears the emergency state flags in SRAM and triggers a watchdog timer overflow, causing the router to restart and execute a standard boot attempt from existing NAND partitions.
+
+
+CHAPTER 3: THE EMERGENCE OF TTYUSB2 AND THE BINARY HDLC PROTOCOL
+
+Following the hardware re-enumeration induced by AT caret GODLOAD, the topology of serial endpoints exposed by the router on the host workstation undergoes a structural transformation. Whereas normal router operation exposed only two serial channels alongside the network adapter, the device descriptor in Download Mode declares three distinct serial interfaces. In Linux environments, the usbserial driver instantiates these interfaces under the paths ttyUSB0, ttyUSB1, and ttyUSB2. This proliferation of device nodes reflects the low-level hardware partitioning of the Balong Bootrom.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.1: USB Interface Topology in Download Mode                                                                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Interface Number  | Host Device Node   | Driver Binding         | Hardware Role in Download Mode                    |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Interface 0       | /dev/ttyUSB0       | USB Serial (option)    | Bootrom execution trace and hardware debug dump   |
+| Interface 1       | /dev/ttyUSB1       | USB Serial (option)    | Unrouted secondary endpoint (no listener)         |
+| Interface 2       | /dev/ttyUSB2       | USB Serial (option)    | Primary Bootrom SIO Flashing & Diagnostic Channel |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+Detailed behavioral analysis reveals that Interface 0, mapped to ttyUSB0, is dedicated exclusively to unstructured hardware debug output emitted by the Bootrom state machine; while an operator can open this port, it emits only unformatted diagnostics and remains deaf to incoming commands. Interface 1, mapped to ttyUSB1, is completely unrouted by the low-level firmware and maintains no active listeners. Interface 2, mapped to ttyUSB2, represents the true Serial Input Output system port of the Balong bootloader. This interface is the sole physical endpoint wired directly to the Download Mode state machine, capable of processing the pre-HDLC AT sequence and executing binary firmware writes. Transmitting commands to ttyUSB0 or ttyUSB1 results in perpetual I/O timeouts, whereas ttyUSB2 responds within milliseconds.
+
+Once ttyUSB2 is switched into binary mode via AT caret DATAMODE, communication adheres strictly to Huawei implementation of the High-Level Data Link Control protocol. Every message transmitted between host and modem must be encapsulated between two framing flag bytes having the hexadecimal value 7E. To prevent data payloads from inadvertently containing the framing byte, the protocol mandates an explicit byte-stuffing mechanism centered on the escape byte 7D.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.2: HDLC Byte Escaping and Stuffing Rules                                                                     |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Original Byte     | Escaped Sequence   | Bitwise Transformation | Protocol Purpose                                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| 0x7E (Frame Flag) | 0x7D 0x5E          | 0x7E XOR 0x20          | Prevents premature termination of HDLC frame      |
+| 0x7D (Escape Flag)| 0x7D 0x5D          | 0x7D XOR 0x20          | Escapes literal occurrences of the escape byte    |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+In addition to framing flags and escape sequences, each packet appends a two-byte cyclic redundancy check calculated using the standard CCITT polynomial with an initialization value of FFFF hexadecimal, bitwise inverted upon completion. This mathematical checksum guarantees that any transmission corruption occurring across the USB physical layer is detected and rejected prior to memory commit.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.3: Balong Download Protocol HDLC Opcode Catalog                                                             |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Opcode (Hex)      | Mnemonic           | Direction              | Operational Function                              |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| 0x01              | LEAVE_HDLC         | Host to Modem          | Exits binary packet mode, returning to AT parser  |
+| 0x02              | ACK_RESPONSE       | Modem to Host          | Acknowledgment packet confirming command receipt  |
+| 0x03              | READ_BLOCK         | Host to Modem          | Raw memory/NAND read request (diagnostic tools)   |
+| 0x0A              | RESTART_MODEM      | Host to Modem          | Forces hardware watchdog reboot out of DL Mode    |
+| 0x0C              | GET_PROTO_VER      | Host to Modem          | Queries detailed protocol revision string         |
+| 0x0D              | RESP_PROTO_VER     | Modem to Host          | Emits protocol identification string payload      |
+| 0x41              | DLOAD_INIT         | Host to Modem          | Declares target partition code and overall size   |
+| 0x42              | DLOAD_BLOCK        | Host to Modem          | Streams a 4096-byte chunk of partition payload    |
+| 0x43              | DLOAD_END          | Host to Modem          | Commits partition, verifies total size and CRC    |
+| 0x45              | GET_PRODUCT_ID     | Host to Modem          | Queries hardware board and chipset identifier     |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+The packet payload structures for the flashing commands are strictly specified in Big-Endian network byte order. The DLOAD INIT packet informs the Bootrom of the partition identity and physical byte length being prepared for transmission. Upon validating these parameters, the bootloader pre-erases the relevant physical flash blocks and responds with an ACK frame carrying an error code of zero.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.4: Binary Structure of the DLOAD_INIT Command (Opcode 0x41)                                                 |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Field Name        | Data Type          | Size (Bytes)           | Description / Endianness                          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Command Code      | uint8_t            | 1 Byte                 | Fixed Opcode value: 0x41                          |
+| Partition Code    | uint32_t           | 4 Bytes                | Target Partition ID code (Big-Endian / htonl)     |
+| Partition Size    | uint32_t           | 4 Bytes                | Total partition payload byte length (Big-Endian)  |
+| Padding Pool      | uint8_t[3]         | 3 Bytes                | Fixed null alignment bytes { 0x00, 0x00, 0x00 }   |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+The DLOAD BLOCK command represents the core streaming vehicle of the flashing protocol. It packages payload data in chunks up to 4096 bytes, identifying each block by a 1-based sequential counter. The bootloader writes each block into physical NAND cells and emits an individual ACK response before accepting subsequent blocks.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.5: Binary Structure of the DLOAD_BLOCK Command (Opcode 0x42)                                                |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Field Name        | Data Type          | Size (Bytes)           | Description / Endianness                          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Command Code      | uint8_t            | 1 Byte                 | Fixed Opcode value: 0x42                          |
+| Block Number      | uint32_t           | 4 Bytes                | 1-based sequential block index (Big-Endian)       |
+| Block Size        | uint16_t           | 2 Bytes                | Byte length of current chunk (Big-Endian / htons) |
+| Payload Data      | uint8_t[]          | Up to 4096 Bytes       | Raw binary partition payload data                 |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+Upon transmitting the final data block, the host dispatches the DLOAD END command. The bootloader recalculates the global checksum of the written memory region, verifies the declared length, commits the sector allocation table, and returns an ACK frame. Flashing is then terminated by transmitting Opcode 0A, triggering an immediate hardware restart into the newly written firmware.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 3.6: Binary Structure of the DLOAD_END Command (Opcode 0x43)                                                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Field Name        | Data Type          | Size (Bytes)           | Description / Endianness                          |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Command Code      | uint8_t            | 1 Byte                 | Fixed Opcode value: 0x43                          |
+| Partition Size    | uint32_t           | 4 Bytes                | Total byte length written to flash (Big-Endian)   |
+| Padding Field 1   | uint8_t[3]         | 3 Bytes                | Alignment padding { 0x00, 0x00, 0x00 }            |
+| Partition Code    | uint32_t           | 4 Bytes                | Target Partition ID code (Big-Endian / htonl)     |
+| Padding Field 2   | uint8_t[11]        | 11 Bytes               | Trailing padding block { 0x00, ... }              |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+
+CHAPTER 4: NAND PARTITION ARCHITECTURE, MEMORY MAP, AND DEDICATED FILESYSTEMS
+
+The Vodafone R206 incorporates an onboard Single-Level Cell NAND flash memory chip possessing a gross storage capacity of 128 megabytes. Because the NAND flash connects directly to the Balong processor without an intermediate hardware Flash Translation Layer controller, the software stack must directly manage the fundamental physical realities of bare NAND silicon: block-level erase requirements, page-level programming constraints, finite cell write endurance, and the presence of factory bad blocks.
+
+The physical flash memory is structured into discrete erase blocks, each containing a group of pages. Each page offers 2048 bytes of user data storage paired with 64 bytes of Out-Of-Band spare memory. This OOB area is reserved for hardware Error Correction Codes utilizing BCH or Reed-Solomon algorithms to correct random bitflips during read operations, bad block marker flags placed at manufacture, and filesystem metadata tags.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 4.1: Physical NAND Flash Geometry (128 MB SLC)                                                                |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Parameter Name    | Physical Dimension | Memory Domain          | Engineering Function                              |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| User Page Size    | 2048 Bytes         | Main Data Area         | Fundamental unit of NAND read and write operations|
+| Spare Area (OOB)  | 64 Bytes           | Out-Of-Band Area       | Hardware ECC, bad block flags, YAFFS2 tags        |
+| Erase Block Size  | 128 KB / 256 KB    | Allocation Block       | Minimum physical unit of flash erase operations   |
+| Total Capacity    | 128 Megabytes      | Total Physical Silicon | Shared between baseband RTOS and Linux OS domains |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+The organization of this storage medium is governed by the Balong Partition Table, known as the pTable, located in the earliest blocks of the flash and assigned the partition code 100 hexadecimal. The platform functions as an asymmetrical dual-OS system: real-time cellular radio processing runs under the proprietary VxWorks RTOS, while high-level routing, Wi-Fi management, DHCP services, and HTTP administration execute under an optimized Linux 2.6.35.7 kernel running a stripped Android userland.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 4.2: Master NAND Flash Partition Mapping Table                                                                |
++-------------------+--------------------+------------------+---------------+-----------------+-----------------------+
+| Partition Code    | Decimal Code       | Partition Name   | Format / FS   | Typical Size    | Subsystem Function    |
++-------------------+--------------------+------------------+---------------+-----------------+-----------------------+
+| 0x00000100        | 256                | Ptable_R1        | Raw Binary    | 64 KB           | Master Partition Table|
+| 0x00000101        | 257                | Bootloader_R1    | Raw Binary    | 256 KB          | Secondary Bootloader  |
+| 0x00000102        | 258                | Bootrom_R1       | Raw Binary    | 128 KB          | Hardware Bootrom Image|
+| 0x00550103        | 5570819            | VxWorks_R1       | Raw Binary    | 14.5 MB         | Baseband Modem RTOS   |
+| 0x00000104        | 260                | Fastboot_R1      | Raw Binary    | 512 KB          | Recovery Bootloader   |
+| 0x00000105        | 261                | Kernel_R1        | Android boot  | 3.62 MB (Max)   | Linux Kernel + Ramdisk|
+| 0x00000107        | 263                | System_R1        | YAFFS2        | 10.9 MB         | Android Base System   |
+| 0x00000109        | 265                | APP_R1           | YAFFS2        | 4.9 MB          | Huawei Daemons (/app) |
+| 0x00000113        | 275                | WEBUI_R1         | YAFFS2        | 22.9 MB         | Web Server UI (/web)  |
+| 0x00000066        | 102                | Nvimage_R1       | Raw Binary    | 2.0 MB          | NVRAM Radio Calibrat. |
+| 0x000a0000        | 655360             | Oeminfo          | Raw Binary    | 1.0 MB          | Carrier Lock & Config |
+| 0x000b0000        | 720896             | CDROMISO         | YAFFS2 / Raw  | 48.4 MB         | Reclaimable Flash (/opt|
++-------------------+--------------------+------------------+---------------+-----------------+-----------------------+
+
+The partition VxWorks R1 houses the complete real-time baseband software stack responsible for managing 3G UMTS, HSPA+, and 2G GSM cellular communications, coordinating digital signal processing, and driving RF transceivers. It operates in tight coordination with Nvimage R1, which stores factory-calibrated radio frequency parameters, power amplifier curves, and the device unique IMEI.
+
+The open-source application environment centers on the Kernel R1 partition, formatted as a standard Android bootimg. It incorporates a fixed 2048-byte header bearing the magic token ANDROID followed by the ARMv7 Linux kernel zImage, the compressed cpio ramdisk archive, memory base load addresses, and kernel command-line arguments.
+
+Partitions dedicated to dynamic application files, such as System R1, APP R1, and WEBUI R1, are formatted using YAFFS2, Yet Another Flash File System 2. YAFFS2 avoids block emulation layers by writing file data directly into NAND pages while recording file object IDs, chunk sequence counters, and modification tags directly into the 64-byte OOB spare area, providing resilience against sudden power loss.
+
+A major discovery in this architecture is the CDROMISO partition, representing 48.4 megabytes of storage. Historically allocated to present a virtual USB CD-ROM drive containing legacy Windows connection software, this read-only partition is mounted on internal flash. By remounting this storage volume as read-write and linking it to the opt directory, 48 megabytes of permanent flash storage can be repurposed to house modern standalone binaries, software packages, and diagnostic utilities that would otherwise exceed the strict RAM capacity of the kernel.
+
+
+CHAPTER 5: FIRMWARE TRANSMISSION, CRYPTOGRAPHIC VERIFICATION, AND STRUCTURAL HARDWARE CONSTRAINTS
+
+Prior to transmission over the serial interface in Download Mode, every firmware partition must be packaged within a specialized container featuring a standardized descriptor known as the pheader. This header allows the bootloader to authenticate the payload before writing to physical flash.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 5.1: Firmware Container Header (pheader) Binary Structure                                                     |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Field Name        | Data Type          | Field Size             | Description and Functional Value                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Magic Identifier  | int32_t            | 4 Bytes                | Fixed validation token: 0xa55aaa55                |
+| Header Total Size | uint32_t           | 4 Bytes                | Total byte size of header and checksum block      |
+| Header Version    | uint32_t           | 4 Bytes                | Specification revision of partition descriptor    |
+| Unlock Field      | uint8_t[8]         | 8 Bytes                | Carrier authorization matching code               |
+| Partition Code    | uint32_t           | 4 Bytes                | Target partition numeric identifier (e.g., 0x105) |
+| Payload Size      | uint32_t           | 4 Bytes                | Total byte length of binary image data            |
+| Build Date        | uint8_t[16]        | 16 Bytes               | ASCII compilation date timestamp string           |
+| Build Time        | uint8_t[16]        | 16 Bytes               | ASCII compilation time timestamp string           |
+| Firmware Version  | uint8_t[32]        | 32 Bytes               | Complete firmware version identifier string       |
+| Header CRC        | uint16_t           | 2 Bytes                | CRC-16 checksum protecting the descriptor block   |
+| Blocksize         | uint32_t           | 4 Bytes                | Chunk size utilized for payload CRC tables        |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+During the flashing procedure, integrity validation operates across three consecutive tiers. The primary tier functions at the transport layer: if line noise corrupts any byte of an HDLC frame, the trailing CRC-16 check fails, causing the Bootrom to discard the packet without processing. The secondary tier operates at the block level: the bootloader validates each incoming 4096-byte chunk against the checksum table in the pheader before writing to flash. The tertiary tier operates at partition completion: the DLOAD END instruction triggers a comprehensive validation of the written payload against declared sizes and cryptographic certificate blocks.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 5.2: Three-Tier Integrity and Cryptographic Verification Hierarchy                                            |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Tier Level        | Verification Point | Validation Mechanism   | Security and Integrity Objective                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Tier 1: Transport | USB Serial Frame   | HDLC CCITT CRC-16      | Rejects electrical noise and line bitflips        |
+| Tier 2: Blockwise | NAND Page Staging  | pheader Checksum Table | Validates chunk integrity before physical commit  |
+| Tier 3: Partition | Partition Closing  | Global Size & Signatures| Guarantees structural and cryptographic validity |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+Despite the flexibility offered by custom firmware development, the Balong V3R2 architecture imposes rigid physical and firmware boundaries that strictly circumscribe modifications. The most critical constraint is the physical size ceiling of the Kernel R1 partition. Defined strictly by the pTable at 3,801,088 bytes (approximately 3.62 megabytes), any boot image exceeding this boundary will cause the flasher to reject the write or will overflow into adjacent flash sectors, corrupting the System R1 partition and rendering the device unbootable. Consequently, any embedded tools integrated into the initramfs, such as Dropbear SSH or BusyBox, must be compiled with strict size optimizations, stripped of debug symbols, and compressed using maximum Gzip or LZMA algorithms.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 5.3: Critical Structural Hardware and Firmware Constraints                                                    |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Constraint Name   | Exact Threshold    | Failure Consequence    | Engineering Solution Implemented                  |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Kernel Partition  | 3,801,088 Bytes    | NAND overflow, bricked | Static uClibc builds, aggressive binary stripping |
+| Physical RAM      | 28 Megabytes       | Kernel OOM panic       | Lightweight C daemons, avoiding bulky runtimes    |
+| USB Gadget Driver | Proprietary 'jusb' | Dead USB port, no link | Stock kernel preservation, userspace injection    |
+| Terminal (PTY)    | Missing in Kernel  | Silent shell, broken UI| Custom C wrapper (zenux_sh) forcing pseudo-prompt |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+A second major hardware boundary is the 28-megabyte RAM allocation. The boot argument mem equals 28m restricts the Linux kernel and userspace to 28 megabytes of physical memory, with the remainder reserved for baseband DSP processing. Because kernel data structures occupy approximately 10 megabytes, userland applications have only 12 to 15 megabytes of operational space. Memory-intensive binaries will instantly trigger the kernel Out-Of-Memory killer.
+
+A third obstacle arises from the proprietary USB gadget subsystem. Huawei source releases under the GPL omit the drivers/jusb directory, which contains the hardware-specific driver for the Balong integrated USB controller. Kernels compiled directly from the open-source release lack functioning USB gadget support: while the system boots and activates the Wi-Fi hardware, the USB port remains dead. Resolving this issue requires preserving the original stock kernel binary, which contains the compiled jusb driver, while focusing all modifications within the ramdisk userspace.
+
+Finally, the stock Linux 2.6.35.7 kernel lacks UNIX98 pseudoterminal support (CONFIG UNIX98 PTYS), meaning /dev/ptmx does not exist. SSH sessions connected via Dropbear fall back to unidirectional standard pipes, suppressing normal interactive shell prompts (PS1) and breaking signal handling. This limitation was overcome by developing zenux sh, a custom C shell wrapper that intercepts the pipe, tracks working directories, and programmatically emits prompt strings, providing a fully functional interactive administrative shell on the hardware.

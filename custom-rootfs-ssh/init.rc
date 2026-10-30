@@ -13,7 +13,7 @@ sysclktz 0
 loglevel 3
 
 # setup the global environment
-    export PATH /sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:/app/bin
+    export PATH /opt/bin:/CDROMISO/bin:/bin:/sbin:/usr/bin:/usr/sbin:/system/bin:/system/sbin:/vendor/bin:/system/xbin:/app/bin
     export LD_LIBRARY_PATH /vendor/lib:/system/lib:/app/lib
     export ANDROID_BOOTLOGO 1
     export ANDROID_ROOT /system
@@ -115,7 +115,6 @@ on fs
 # BEGIN—DTS2012072604125- c203521-2012-7-26-modified
     mkdir /CDROMISO
     mount yaffs2 mtd@/CDROMISO /CDROMISO
-    mount yaffs2 mtd@/CDROMISO /CDROMISO ro remount
 # END—DTS2012072604125- c203521-2012-7-26-modified
 # END—DTS2012072307185- c203521-2012-7-23-modified
 #    mount yaffs2 mtd@/yaffs2 /data nosuid nodev

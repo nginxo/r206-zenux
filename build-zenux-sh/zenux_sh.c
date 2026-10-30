@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
     strcpy(oldpwd, cwd);
     setenv("PWD", cwd, 1);
     setenv("OLDPWD", oldpwd, 1);
+    setenv("PATH", "/opt/bin:/CDROMISO/bin:/bin:/sbin:/usr/bin:/usr/sbin:/system/bin:/system/sbin:/vendor/bin:/system/xbin:/app/bin", 1);
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));

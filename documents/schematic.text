@@ -1,0 +1,290 @@
+PROJECT ZENUX: VODAFONE R206 (HUAWEI BALONG V3R2 / CH1E5220SM VER.B)
+REVERSE-ENGINEERED HARDWARE SCHEMATIC, PINOUT ARCHITECTURE, AND CIRCUIT SPECIFICATION
+
+
+================================================================================
+SECTION 1: OVERVIEW AND COMPONENT IDENTIFICATION (BOARD: CH1E5220SM VER.B RF)
+================================================================================
+
+Physical Characteristics:
+- PCB Model Silkscreen: CH1E5220SM VER.B RF (Dual-layer RF and baseband board common to Huawei E5220 / E5331 and Vodafone R206).
+- PCB Dimensions: Approximately 85 mm x 50 mm, contoured oval edges.
+- Substrate: 6-layer high-density interconnect (HDI) FR4 with dedicated inner solid Ground (Layer 2) and Power Distribution (Layer 5) planes.
+- Dual-sided component population:
+  - Component Side A (Top side under metal RF shields): Broadcom BCM43362 Wi-Fi SoC, HiSilicon Balong V3R2 Baseband/App SoC, SK Hynix 128MB NAND + 32MB LPDDR MCP, HiSilicon PMIC, HiSilicon Hi6362 RF Transceiver, Multi-mode Power Amplifier, 4 Status LEDs.
+  - Component Side B (Bottom side facing battery compartment): Micro-USB Type-B 5-pin port, 6-pin Mini-SIM (2FF) tray with metal slider, 3-pin gold leaf battery terminals, Power/WPS tactile buttons, Main Cellular Antenna, 3G Diversity Antenna, 2.4 GHz Wi-Fi FPC Antenna, Murata RF test receptacles.
+
+
+================================================================================
+SECTION 2: SYSTEM INTERCONNECT AND BUS TOPOLOGY
+================================================================================
+
++----------------------------------------------------------------------------------------------------+
+|                                      SYSTEM BUS TOPOLOGY                                           |
++----------------------------------------------------------------------------------------------------+
+
+                          +------------------------------------------+
+                          |   Micro-USB Connector (5-Pin Micro-B)    |
+                          +--------------------+---------------------+
+                                               |
+                          +--------------------+---------------------+
+                          |   Battery Terminal Block (3-Pin Gold)    |
+                          +--------------------+---------------------+
+                                               |
+                                               v [VBUS 5.0V / VBATT 3.7V]
+                        +-----------------------------------------------+
+                        |        Power Management Unit (PMIC)           |
+                        |      (Buck Regulators, LDOs, Battery NTC)     |
+                        +---+-----------+-----------+---------------+---+
+                            |           |           |               |
+              VCORE (1.1V)  |           |           | VMEM (1.8V)   | VDD33 (3.3V)
+                            v           |           v               v
+    +-----------------------------+     |   +-------------------------------+
+    |   HiSilicon Balong V3R2     |     |   |    SK Hynix MCP Memory        |
+    |   Application & Baseband    |     |   |  - 128 MB SLC NAND Flash      |
+    |   - ARM Cortex-A9 (App)     |<===>+==>|  - 32 MB Mobile LPDDR SDRAM   |
+    |   - ARM Cortex-M3 / DSP     |         |  [8-bit NAND + 16-bit DDR Bus]|
+    +----+-----------+------------+         +-------------------------------+
+         |           |
+         |           | SDIO 4-bit Bus (CLK, CMD, DAT0-3)
+         |           v
+         |      +-------------------------------+
+         |      |    Broadcom BCM43362KUBG      |
+         |      |    Single-Chip Wi-Fi 802.11n  |
+         |      |    - Integrated PA / LNA      |
+         |      +---------------+---------------+
+         |                      | [2.4 GHz RF Feed]
+         |                      v
+         |              +---------------+
+         |              | Wi-Fi Antenna | (2.4 GHz FPC)
+         |              +---------------+
+         |
+         | High-Speed Digital I/Q Interface & SPI Control
+         v
+    +-----------------------------+
+    |  HiSilicon Hi6362 Cellular  |
+    |  Multi-Band RF Transceiver  |
+    +--------------+--------------+
+                   |
+                   v [Tx RF Out / Rx RF In]
+    +-----------------------------+
+    | Multi-Mode Power Amplifier  |
+    | & SAW Duplexer Filters      |
+    +--------------+--------------+
+                   |
+           +-------+-------+
+           |               |
+           v               v
+    +--------------+ +--------------+
+    | Main Cellular| | 3G Diversity |
+    | Antenna      | | Antenna      |
+    +--------------+ +--------------+
+
+
+================================================================================
+SECTION 3: POWER MANAGEMENT, CHARGING, AND BATTERY ELIMINATOR CIRCUIT
+================================================================================
+
+Micro-USB Input and Battery Conditioning:
+The Micro-USB port receives 5.0 volts DC from an external power supply. A transient voltage suppression (TVS) diode array protects the USB VBUS and D+/D- lines against electrostatic discharge (ESD). The VBUS rail connects to the internal switching charger stage of the PMIC. The PMIC manages battery charging using constant-current / constant-voltage (CC/CV) profiles for the 3.7V / 1500mAh Lithium-Ion battery.
+
+Battery Eliminator Circuit:
+Terminal 1 provides +3.7V to +4.2V nominal voltage to the system. Terminal 2 connects to the internal analog-to-digital converter (ADC) channel measuring the NTC thermistor. When no battery is installed, the PMIC detects an open circuit (infinite resistance) and shuts down. Soldering a 10 kOhm resistor between Pin 2 (NTC) and Pin 3 (GND) establishes a voltage divider simulating a healthy cell at 25 degrees Celsius, allowing continuous operation without a battery.
+
++----------------------------------------------------------------------------------------------------+
+| CIRCUIT SCHEMATIC: POWER INPUT, CHARGING, AND BATTERY BYPASS                                       |
++----------------------------------------------------------------------------------------------------+
+
+  Micro-USB (5-Pin)
+  +-------------+
+  | Pin 1: VBUS |----+--------------------------+
+  |             |    |                          |
+  | Pin 2: D-   |--+ | [TVS Diode Array]        |
+  |             |  | |   |                      v
+  | Pin 3: D+   |--+ |  === (GND)         +-------------+
+  |             |    |                    | PMIC Charge |
+  | Pin 4: ID   |    |                    | Controller  |
+  |             |    |                    +------+------+
+  | Pin 5: GND  |----+                           |
+  +-------------+    |                           v
+                    === (GND)                 [V_BATT] (3.7V - 4.2V)
+                                                 |
+  Battery Leaf Terminals                         |
+  +----------------------------------------------+------+
+  |                                                     |
+  |  [Pin 1: V_BATT (+)] <------------------------------+
+  |                                                     |
+  |  [Pin 2: NTC Sense] <---+                           |
+  |                         |                           |
+  |                       [10 kOhm Resistor Mod]        |
+  |                         |                           |
+  |  [Pin 3: GND (-)] <-----+---------------------------+
+  |                         |
+  +-------------------------+
+                            |
+                           === (System Ground Plane)
+
+PMIC Switching Regulators & Voltage Rails:
+- Rail VCORE (1.1V - 1.2V DC): Powered by a high-efficiency DC-DC step-down buck converter through a shielded wire-wound inductor (L1) and ceramic output capacitors (C1, C2). Feeds ARM Cortex-A9 core and Balong baseband digital logic.
+- Rail VMEM (1.8V DC): Powered by buck regulator (L2). Powers LPDDR Mobile SDRAM interface, NAND Flash I/O logic, and Broadcom BCM43362 digital I/O.
+- Rail VDD33 (3.3V DC): Regulated supply for high-voltage analog stages, USB PHY transceiver, and 3.3V GPIO pull-up networks.
+- Rail VRF (2.8V - 3.4V DC): Dedicated low-dropout (LDO) regulator delivering low-noise analog voltage to the cellular transceiver (Hi6362) and Wi-Fi internal LNA.
+
+
+================================================================================
+SECTION 4: CORE PROCESSING AND MEMORY SUBSYSTEM SCHEMATIC
+================================================================================
+
+The core processing unit is the HiSilicon Balong V3R2 (Hi6756CS) multi-processor SoC, integrating an ARM Cortex-A9 MPCore application processor with hardware floating point unit, a companion Cortex-M3 / DSP core handling the real-time cellular stack, and on-chip hardware accelerators for crypto, HDLC, and memory control.
+
+Memory Subsystem:
+Storage and system RAM are unified within a single Multi-Chip Package (MCP) manufactured by SK Hynix (part family H8BCS0...). The package stacks two discrete semiconductor dies on an internal interposer substrate:
+1. 1 Gigabit (128 Megabytes) SLC NAND Flash: Interfaced to the Balong processor through an 8-bit parallel MTD bus (NAND_D0 through NAND_D7), accompanied by standard NAND control strobes: CLE (Command Latch Enable), ALE (Address Latch Enable), CE_N (Chip Enable), RE_N (Read Enable), WE_N (Write Enable), and RB_N (Ready/Busy output).
+2. 256 Megabit (32 Megabytes) Mobile LPDDR SDRAM: Interfaced across a high-speed 16-bit DDR bus running at 166 MHz, with differential clock lines (CLK_P, CLK_N), Row/Column address strobes (RAS, CAS), byte mask enables (LDQM, UDQM), and CKE (Clock Enable).
+
++----------------------------------------------------------------------------------------------------+
+| CIRCUIT SCHEMATIC: CORE SOC TO MEMORY BUS INTERFACE                                               |
++----------------------------------------------------------------------------------------------------+
+
+    +----------------------------------+          +----------------------------------+
+    |   HiSilicon Balong V3R2 SoC      |          |    SK Hynix MCP (NAND + LPDDR)   |
+    |   (Hi6756CS Application Proc)    |          |                                  |
+    |                                  |          |  [128 MB SLC NAND Flash Die]     |
+    |  NAND_D[0..7] (Bidirectional)    |<========>|  IO[0..7] (8-bit Data Bus)       |
+    |  NAND_ALE (Address Latch Enable) |--------->|  ALE (Address Latch)             |
+    |  NAND_CLE (Command Latch Enable) |--------->|  CLE (Command Latch)             |
+    |  NAND_CE_N (Chip Enable Low)     |--------->|  CE# (Chip Select)               |
+    |  NAND_RE_N (Read Enable Low)     |--------->|  RE# (Read Strobe)               |
+    |  NAND_WE_N (Write Enable Low)    |--------->|  WE# (Write Strobe)              |
+    |  NAND_RB_N (Ready / Busy Input)  |<---------|  R/B# (Hardware Ready / Busy)    |
+    |                                  |          |                                  |
+    |                                  |          |  [32 MB LPDDR SDRAM Die]         |
+    |  DDR_D[0..15] (Bidirectional)    |<========>|  DQ[0..15] (16-bit Memory Bus)   |
+    |  DDR_A[0..12] (Address Bus)      |--------->|  A[0..12] (Row/Col Addresses)    |
+    |  DDR_CLK_P / DDR_CLK_N           |--------->|  CK / CK# (Differential Clock)   |
+    |  DDR_CKE (Clock Enable)          |--------->|  CKE (Clock Enable)              |
+    |  DDR_CS_N (Chip Select)          |--------->|  CS# (Memory Select)             |
+    |  DDR_RAS_N / CAS_N / WE_N        |--------->|  RAS# / CAS# / WE# (Commands)    |
+    |  DDR_DQM[0..1] (Data Masks)      |--------->|  LDQM / UDQM (Byte Masks)        |
+    +----------------------------------+          +----------------------------------+
+
+
+================================================================================
+SECTION 5: WIRELESS LAN SUBSYSTEM SCHEMATIC (BROADCOM BCM43362)
+================================================================================
+
+The Wi-Fi interface is powered by a dedicated Broadcom BCM43362KUBG single-chip 802.11b/g/n radio processor housed inside the upper-left RF shielding can. It incorporates a 2.4 GHz CMOS transceiver, a high-linearity power amplifier (PA), an internal low-noise amplifier (LNA), an internal transmit/receive (T/R) RF switch, and power management units.
+
+The BCM43362 communicates with the Balong application processor via a high-speed 4-bit SDIO (Secure Digital Input Output) v2.0 bus:
+- SDIO_CLK: Clock signal driven by Balong SoC (typically up to 50 MHz).
+- SDIO_CMD: Command/Response bidirectional serial line.
+- SDIO_DAT0 through SDIO_DAT3: 4-bit parallel data nibble bus.
+- WL_REG_ON: Hardware regulator enable driven by a Balong GPIO line to power up the Wi-Fi chip.
+- WL_HOST_WAKE: Out-of-band interrupt line from BCM43362 to Balong to wake the host from low-power states.
+
++----------------------------------------------------------------------------------------------------+
+| CIRCUIT SCHEMATIC: WI-FI PROCESSOR AND RF FRONT-END                                                |
++----------------------------------------------------------------------------------------------------+
+
+    +--------------------------+                      +--------------------------+
+    | HiSilicon Balong V3R2    |                      | Broadcom BCM43362KUBG    |
+    |                          |                      | (Wi-Fi 802.11b/g/n SoC)  |
+    | SDIO_CLK (50 MHz)        |--------------------->| SDIO_CLK                 |
+    | SDIO_CMD (Bidirectional) |<====================>| SDIO_CMD                 |
+    | SDIO_DAT[0..3]           |<====================>| SDIO_DATA[0..3]          |
+    | GPIO_WL_REG_ON           |--------------------->| REG_ON (Power Enable)    |
+    | GPIO_WL_HOST_WAKE        |<---------------------| HOST_WAKE (Interrupt)    |
+    |                          |                      |                          |
+    |                          |  +---------------+   |                          |
+    |                          |  | 26 MHz TCXO   |-->| XTAL_IN / XTAL_OUT       |
+    |                          |  +---------------+   |                          |
+    +--------------------------+                      | RF_TR (2.4 GHz Feed)     |
+                                                      +------------+-------------+
+                                                                   |
+                                                                   v
+                                                      +--------------------------+
+                                                      | LC Pi-Network Match Filter|
+                                                      | (0402 Inductors / Caps)  |
+                                                      +------------+-------------+
+                                                                   |
+                                                                   v
+                                                      +--------------------------+
+                                                      | Murata MS-156 / SWD      |
+                                                      | Mechanical RF Switch     |
+                                                      +------------+-------------+
+                                                                   |
+                                                                   v
+                                                      +--------------------------+
+                                                      | Onboard 2.4 GHz Inverted |
+                                                      | F Antenna (FPC Radiator) |
+                                                      +--------------------------+
+
+
+================================================================================
+SECTION 6: STATUS INDICATOR LED SUBSYSTEM SCHEMATIC
+================================================================================
+
+The four status indicators located on the center divider of Component Side A are driven by active-low constant-current sink lines controlled by the Balong power management block. The common anode side of all LED packages is connected to the internal 1.8V regulated power supply (VIO_LED).
+
+Hardware Configuration of the Four SMD Packages:
+1. LED1 (Cellular Signal): Tri-Color Package. Three separate cathode lines connect to internal current sinks for Red, Green, and Blue.
+2. LED2 (Wi-Fi Indicator): Dual-Die Package. Green cathode connects to Wi-Fi Green sink; Blue cathode connects to Wi-Fi Blue sink (activated in Project Zenux via LED_COLOR_BLUE).
+3. LED3 (Battery Indicator): Dual-Die Package. Red cathode and Green cathode independently driven to produce Red, Green, or mixed Amber.
+4. LED4 (Message / SMS Envelope): Dual-Die Package. Green cathode connects to SMS Green sink; Blue cathode connects to SMS Blue sink (locked solid blue in Project Zenux).
+
++----------------------------------------------------------------------------------------------------+
+| CIRCUIT SCHEMATIC: STATUS LED CURRENT SINK DRIVERS                                                 |
++----------------------------------------------------------------------------------------------------+
+
+                         +-------------------------------+
+                         | VIO_LED Supply Rail (+1.8V DC)|
+                         +---------------+---------------+
+                                         |
+     +-------------------+---------------+-------------------+-------------------+
+     |                   |                                   |                   |
+     v (Anode)           v (Anode)                           v (Anode)           v (Anode)
+  +-----+             +-----+                             +-----+             +-----+
+  | LED1| (Network)   | LED2| (Wi-Fi)                     | LED3| (Battery)   | LED4| (Envelope/SMS)
+  | R G | B           | G   | B                           | R   | G           | G   | B
+  +--+--+             +--+--+                             +--+--+             +--+--+
+     | | |               |  |                                |  |                |  |
+     | | |               |  +-(Cathode: Blue Die)            |  |                |  +-(Cathode: Blue)
+     | | |               |                                   |  |                |
+     | | | (Cathode: B)  +----(Cathode: Green Die)           |  |                +----(Cathode: Green)
+     | | |                                                   |  |
+     | | +-(Cathode: G)                                      |  +-(Cathode: Green)
+     | |                                                     |
+     | +---(Cathode: R)                                      +----(Cathode: Red)
+     |
+     v
+  +------------------------------------------------------------------------------------+
+  |                     Balong Internal Constant-Current Sinks                         |
+  | (Driver: balong_led_drv.c -> IFC Messages to Power Controller -> Programmable Sink)|
+  +------------------------------------------------------------------------------------+
+
+
+================================================================================
+SECTION 7: PHYSICAL TEST POINTS, JTAG, AND DEBUG PINOUT MATRIX
+================================================================================
+
+The printed circuit board features multiple gold-plated circular test points (TP) on both Component Side A and Side B, providing hardware access to low-level silicon nets.
+
++----------------------------------------------------------------------------------------------------+
+| TEST POINT MAPPING AND REVERSE-ENGINEERED PINOUT MATRIX                                            |
++---------------+---------------------+------------------------+-------------------------------------+
+| Test Point ID | Physical Net Name   | Electrical Logic Level | Hardware Purpose and Interconnect   |
++---------------+---------------------+------------------------+-------------------------------------+
+| TP_UART_TX    | UART0_TXD (PL011)   | 1.8V CMOS Output       | Raw serial console output (115200)  |
+| TP_UART_RX    | UART0_RXD (PL011)   | 1.8V CMOS Input        | Raw serial console input (115200)   |
+| TP_BOOT_PIN   | BOOT_STRAP_PIN      | 1.8V Pull-up (Short 0V)| Short to GND to force Download Mode |
+| TP_USB_DP     | USB_DPLUS           | 3.3V High-Speed USB    | Positive differential USB data line |
+| TP_USB_DM     | USB_DMINUS          | 3.3V High-Speed USB    | Negative differential USB data line |
+| TP_VBUS_SENSE | USB_VBUS_5V         | 5.0V DC Input          | USB 5V insertion detection net      |
+| TP_SIM_RST    | SIM_RESET           | 1.8V / 3.0V ISO-7816   | Smartcard reset strobe to SIM tray  |
+| TP_SIM_CLK    | SIM_CLOCK           | 3.25 MHz Clock         | Synchronous smartcard clock line    |
+| TP_SIM_IO     | SIM_DATA            | Bidirectional I/O      | Serial smartcard command data net   |
+| TP_GND_FRAME  | SYSTEM_GND          | 0.0V Ground Return     | Common ground plane (RF shield lip) |
++---------------+---------------------+------------------------+-------------------------------------+
+
+Emergency Boot-Pin (Needle Method) Circuit:
+The BOOT_STRAP_PIN test point is connected to an internal 100 kOhm pull-up resistor to the 1.8V digital supply. During Power-On Reset (POR), the Balong Bootrom reads this line. If a needle or probe shorts TP_BOOT_PIN to TP_GND_FRAME during USB power application, the pin reads 0V (logic LOW). The processor bypasses NAND initialization and launches the emergency Download Mode USB listener immediately.

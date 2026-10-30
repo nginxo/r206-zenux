@@ -1,0 +1,309 @@
+PROJECT ZENUX: VODAFONE R206 FIRMWARE INSTALLATION GUIDE
+
+PART 3: STEP-BY-STEP USER DEPLOYMENT TUTORIAL, HARDWARE SETUP, FLASHING PROCEDURE, AND OPERATIONAL VERIFICATION
+
+
+INTRODUCTION AND TUTORIAL SCOPE
+
+This tutorial provides a complete, foolproof, step-by-step walkthrough for flashing and installing Project Zenux on the Vodafone R206 mobile Wi-Fi router (Huawei Balong V3R2 platform). Unlike Parts One and Two, which explored the theoretical architecture and reverse engineering analysis of the hardware, this third installment is an actionable operational guide engineered for developers, hobbyists, and systems administrators who wish to convert their stock router into an open, secure, and extensible embedded Linux system.
+
+Following this procedure will install an optimized Linux 2.6.35.7 environment featuring a hardened Dropbear SSH server listening on port 2222, an interactive shell prompt powered by zenux_sh, two hundred and seventy-eight standard Linux applets powered by BusyBox 1.37.0, real-time Wi-Fi LED blinking telemetry during active SSH sessions, permanent reclamation of the forty-eight-megabyte CDROMISO partition into writable flash memory mounted on /opt, and the native C99 Fastfetch system information utility.
+
+
+SECTION 1: PREREQUISITES AND HARDWARE PREPARATION
+
+Before beginning the installation, you must assemble the necessary physical hardware and ensure your workstation is properly configured. Attempting to flash embedded NAND flash under unstable electrical conditions can result in a bricked device.
+
+Physical Requirements:
+You will need one Vodafone R206 mobile Wi-Fi router with its internal battery charged to at least fifty percent capacity. You must use a reliable micro USB data cable capable of high-speed USB 2.0 communication. Avoid charging-only cables that lack internal D+ and D- data wires. Always plug the micro USB cable directly into an onboard USB port on your computer, avoiding unpowered external USB hubs or loose front-panel extenders.
+
+Workstation Operating System:
+The flashing toolchain requires a workstation running Linux (Ubuntu, Debian, Fedora, Arch Linux, or compatible distributions). If you are using Windows, you can execute the procedure through Windows Subsystem for Linux version two (WSL2), provided you install the usbipd-win utility to pass raw USB devices into the WSL2 virtual machine.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 1.1: System Requirements and Dependency Checklist                                                             |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Requirement       | Minimum Version    | Installation Command   | Purpose                                           |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Operating System  | Linux 64-bit       | Ubuntu / Debian / Arch | Native execution environment for USB drivers      |
+| Python 3          | Version 3.8+       | sudo apt install python3| Executes the DL mode switching script            |
+| PySerial Module   | Version 3.4+       | sudo apt install ...   | Manages serial communication with modem ports     |
+| Archive Tools     | cpio, gzip         | sudo apt install cpio  | Builds the compressed initramfs ramdisk           |
+| Network Tools     | iproute2, ping     | sudo apt install ...   | Configures virtual network interface and IP       |
+| OpenSSH Client    | OpenSSH 7.6+       | sudo apt install ...   | Administrative access and automated payload pipe  |
+| Flasher Utility   | Balong Flash 3.0   | Included in repository | Low-level Bootrom partition writer                |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+Installing Dependencies on Ubuntu or Debian:
+Open a terminal on your host workstation and install all required packages with the following command:
+
+sudo apt update
+sudo apt install -y python3 python3-pip python3-serial cpio gzip iproute2 iputils-ping openssh-client
+
+Installing Dependencies on Fedora:
+sudo dnf install -y python3 python3-pyserial cpio gzip iproute iputils openssh-clients
+
+Installing Dependencies on Arch Linux:
+sudo pacman -S --needed python python-pyserial cpio gzip iproute2 iputils openssh
+
+
+SECTION 2: CLONING THE REPOSITORY AND PERMISSION HARDENING
+
+Navigate to your working directory and ensure you are inside the r206-analysis repository containing Project Zenux. The repository contains pre-compiled static binaries, the Balong flashing utility, the kernel builder, and the cryptographic identity files.
+
+Setting Cryptographic Key Permissions:
+The repository includes an Ed25519 asymmetric private key named r206-root-ed25519. Modern versions of OpenSSH strictly enforce permission boundaries on private keys: if a private key file is readable by group members or other users on the system, OpenSSH will deliberately refuse to load it, producing a Permission denied error.
+
+You must explicitly restrict the permissions of the private key by running:
+
+chmod 0600 r206-root-ed25519
+
+You can verify that the key permissions are set correctly by executing:
+
+ls -l r206-root-ed25519
+
+The file mode in the output must read exactly:
+-rw------- 1 user user r206-root-ed25519
+
+
+SECTION 3: CONNECTING AND PROBING THE DEVICE
+
+With the battery inserted and sufficiently charged, power on the Vodafone R206 by holding down the central power button until the screen lights up. Allow approximately twenty seconds for the factory operating system to boot.
+
+Connecting via USB:
+Connect the router to your host computer using the micro USB data cable. Check your Linux system log to verify that the modem has enumerated:
+
+lsusb -d 12d1:1c05
+
+The command should return a line matching:
+Bus ... Device ...: ID 12d1:1c05 Huawei Technologies Co., Ltd.
+
+Checking Serial Nodes:
+Verify that the kernel option driver has attached two serial character devices:
+
+ls -l /dev/ttyUSB0 /dev/ttyUSB1
+
+You should see:
+crw-rw---- 1 root dialout 188, 0 /dev/ttyUSB0
+crw-rw---- 1 root dialout 188, 1 /dev/ttyUSB1
+
+Note for WSL2 Users Only:
+If you are running Windows with WSL2, open an administrative PowerShell terminal on Windows and check the USB device list:
+
+usbipd list
+
+Locate the entry with Hardware ID 12d1:1c05. Note its bus ID (for example, 4-10) and attach it to your WSL2 instance:
+
+usbipd attach --wsl --busid 4-10
+
+Return to your WSL2 Linux terminal and run ls -l /dev/ttyUSB0 to verify that the ports are visible inside Linux.
+
+
+SECTION 4: EXECUTING THE AUTOMATED INSTALLER
+
+Project Zenux includes a master deployment script named zenux_flash.sh that orchestrates the entire flashing and configuration pipeline automatically. It compiles the boot image, sends the diagnostic command to switch the modem into Download Mode, waits for the Bootrom serial interface to appear, flashes the new kernel partition, re-attaches the network interface, and deploys Fastfetch over a secure SSH pipe.
+
+Running the Master Script:
+From within the r206-analysis directory, run the installer with root privileges:
+
+sudo ./zenux_flash.sh
+
+Understanding the Output Sequence:
+As the installer executes, it will output status banners detailing each stage of the operation.
+
+First, it packs the custom initramfs from custom-rootfs-ssh and builds the Android boot image:
+Packing initramfs >>>
+Bootimg will be compiled now >>>
+Boot image ready: r206-ssh-boot-pty.img (3635200 bytes)
+
+Second, it sends the AT caret GODLOAD command to /dev/ttyUSB1 to force the modem into Download Mode:
+Feeding AT^GODLOAD to ttyUSB2 >>>
+[ /dev/ttyUSB1 ] ANSWER: b'AT^GODLOAD\r\r\nOK\r\n'
+SUCCESS /dev/ttyUSB1 The device is rebooting
+
+Third, the script pauses and waits for the Bootrom Download Mode interface (/dev/ttyUSB2) to appear:
+Waiting for the connection of the bootloader >>>
+.....
+/dev/ttyUSB2 is present
+
+Special Instruction for WSL2 Users During Flashing:
+When the router reboots into Download Mode, it briefly disconnects and re-enumerates on the USB bus. If you are on native Linux, the kernel automatically binds the new port. If you are on WSL2, Windows will see a new device state. Switch to your administrative PowerShell on Windows and immediately rebind the device:
+
+usbipd attach --wsl --busid <bus-id>
+
+Fourth, the installer invokes balong_flash to write the boot image directly to physical flash memory:
+Kernel flashing starts from here >>>
+00  Kernel_R1             100%
+SUCCESS! The device is rebooting.
+Please wait whilst the R206 boots >>>
+
+Fifth, the script waits for the normal operating system to boot up, automatically detects the virtual network adapter (such as wwp13s0u4 or wwx...), and assigns the host IP address 192.168.0.100/24:
+Network interface detected: wwp13s0u4
+Assigning IP 192.168.0.100/24 >>>
+64 bytes from 192.168.0.1: icmp_seq=1 ttl=64 time=1.2 ms
+
+Sixth, the script waits for the Dropbear SSH daemon to open on port 2222, automatically connects, streams the native Fastfetch binary to /opt/bin/fastfetch, sets executable permissions, and creates the /bin/fastfetch global symbolic link:
+Installing fastfetch to /opt/bin/fastfetch >>>
+SUCCESS
+All set!
+to connect via SSH, use this >>>
+ssh -i r206-root-ed25519 -p 2222 root@192.168.0.1
+
+
+SECTION 5: CONNECTING VIA SSH AND OPERATING THE INTERACTIVE SHELL
+
+Once the installer finishes, your Vodafone R206 is running Project Zenux. You can log into the device using your Ed25519 private key:
+
+ssh -i r206-root-ed25519 -p 2222 root@192.168.0.1
+
+Understanding the Interactive Prompt:
+Upon logging in, you will notice the informative message:
+PTY allocation request failed on channel 0
+
+This is normal and expected: the stock Linux 2.6.35.7 kernel lacks UNIX98 pseudoterminals. Project Zenux automatically handles this through its custom zenux_sh shell wrapper. You will be greeted by the Zenux welcome banner and an interactive shell prompt reflecting your current working directory:
+
+Project Zenux running on R206 // exertia.it
+/ $ 
+
+You can test directory navigation and observe how the prompt tracks your location:
+
+/ $ cd /opt
+/opt $ cd /var
+/var $ cd /
+/ $ 
+
+Pressing Ctrl+C inside the shell cancels the currently running command without terminating your SSH connection, providing a smooth terminal experience.
+
+
+SECTION 6: VERIFYING HARDWARE TELEMETRY AND LED BEHAVIOR
+
+Project Zenux integrates hardware monitoring directly with the chassis LEDs of the R206. You can physically inspect the LEDs to confirm correct system operation:
+
+Wi-Fi LED SSH Blinking:
+Look at the blue Wi-Fi LED while your SSH session is open. The custom led_ctrl background daemon continuously scans /proc/net/tcp. While you are connected in SSH on port 2222, the blue Wi-Fi LED will pulse rhythmically at five-hundred-millisecond intervals.
+
+Exit your SSH session by typing exit:
+
+/ $ exit
+Connection to 192.168.0.1 closed.
+
+Observe the blue Wi-Fi LED: within one second of disconnecting, the LED will stop blinking and return to a steady, solid blue light.
+
+Envelope / SMS LED:
+The blue envelope LED remains locked in a solid blue state at all times, providing visual confirmation that the custom LED driver is actively governing hardware states.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 6.1: Chassis LED Visual Status Reference                                                                      |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| LED Indicator     | Color / Pattern    | Device State           | Meaning                                           |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Wi-Fi Icon        | Solid Blue         | Router Standby         | Normal operation, no SSH client connected         |
+| Wi-Fi Icon        | Blinking Blue (1Hz)| Active SSH Session     | Administrative SSH connection active on port 2222 |
+| Envelope Icon     | Solid Blue         | System Operational     | Background Zenux LED supervisor active            |
+| Battery Icon      | Green / Amber      | Power Subsystem        | Normal battery charge indicator                   |
+| Signal Icon       | Green / Cyan / Blue| Cellular Radio         | Cellular network registration status              |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+
+
+SECTION 7: TESTING THE SYSTEM TOOLBOX AND RECLAIMED STORAGE
+
+Log back into the router via SSH:
+
+ssh -i r206-root-ed25519 -p 2222 root@192.168.0.1
+
+Verifying the Linux Kernel and Architecture:
+Run uname -a to inspect the running kernel:
+
+/ $ uname -a
+Linux localhost 2.6.35.7 #2 PREEMPT Sun Apr 7 18:08:23 CST 2013 armv7l GNU/Linux
+
+This confirms that the ARMv7 Linux 2.6.35 kernel is running with all proprietary hardware drivers intact.
+
+Verifying Reclaimed Flash Storage:
+Check the mounted filesystems using df -h:
+
+/ $ df -h
+Filesystem                Size      Used Available Use% Mounted on
+/dev/block/mtdblock0     10.9M      8.8M      2.1M  81% /system
+/dev/block/mtdblock1      4.9M      4.3M    608.0K  88% /app
+/dev/block/mtdblock5     22.9M     16.7M      6.2M  73% /app/webroot
+/dev/block/mtdblock3      5.9M      1.5M      4.4M  26% /data
+/dev/block/mtdblock4     48.3M      2.6M     45.6M   5% /CDROMISO
+
+Notice the /CDROMISO entry: it provides 45.6 megabytes of free, writable NAND flash memory. The /opt directory is linked directly to this space, allowing you to store custom tools, scripts, and compiled binaries permanently across reboots.
+
+Verifying RAM Usage:
+Inspect system memory with the free command:
+
+/ $ free
+             total        used        free      shared  buff/cache   available
+Mem:         20352       12532         892           0        6928           0
+-/+ buffers/cache:       12532        7820
+Swap:            0           0           0
+
+Running Native Fastfetch:
+Execute the fastfetch command to display full system metrics:
+
+/ $ fastfetch
+
+Fastfetch will render the Balong logo alongside detailed hardware diagnostics:
+        #####            root@localhost
+       #######           --------------
+       ##O#O##           Kernel: Linux 2.6.35.7
+       #######           Uptime: 6 mins
+     ###########         Shell: zenux_sh
+    #############        Terminal: dropbear
+   ###############       CPU: Hisilicon Balong
+   ################      Memory: 12.27 MiB / 19.88 MiB (62%)
+  #################      Swap: Unused
+#####################    Disk (/CDROMISO): 2.62 MiB / 48.25 MiB (5%) - yaffs2
+#####################    Disk (/app): 4.28 MiB / 4.88 MiB (88%) - yaffs2
+  #################      Disk (/app/webroot): 16.71 MiB / 22.88 MiB (73%) - yaffs2
+                         Disk (/data): 1.50 MiB / 5.88 MiB (26%) - yaffs2
+                         Disk (/system): 8.79 MiB / 10.88 MiB (81%) - yaffs2 [Read-only]
+                         Locale: C
+
+Testing the 278-Applet BusyBox Suite:
+Verify that full-featured command-line utilities operate as expected:
+
+/ $ which grep top awk sed vi tar gzip
+/bin/grep
+/bin/top
+/bin/awk
+/bin/sed
+/bin/vi
+/bin/tar
+/bin/gzip
+
+
+SECTION 8: TROUBLESHOOTING AND FREQUENTLY ASKED QUESTIONS
+
+Question 1: OpenSSH reports WARNING: UNPROTECTED PRIVATE KEY FILE and refuses to connect.
+Cause: The file permissions on r206-root-ed25519 are too open (for example, 0644 or 0755).
+Solution: Run chmod 0600 r206-root-ed25519 on your host workstation to restrict access exclusively to your user.
+
+Question 2: The installer halts at Waiting for the connection of the bootloader.
+Cause: In a WSL2 environment, Windows detached the USB device during the warm reboot and did not automatically reattach it to Linux.
+Solution: Open an administrative PowerShell on Windows, run usbipd list, and reattach the bus ID with usbipd attach --wsl --busid <id>. On native Linux, ensure your micro USB cable supports high-speed data transfer.
+
+Question 3: The host workstation cannot ping 192.168.0.1 after flashing.
+Cause: The host network manager did not automatically assign an IP address to the newly created virtual Ethernet interface.
+Solution: Identify the interface name by running ip link show (look for wwp... or wwx...). Manually bring up the interface and assign the host IP:
+sudo ip link set <interface_name> up
+sudo ip addr replace 192.168.0.100/24 dev <interface_name>
+Verify connectivity by pinging 192.168.0.1.
+
+Question 4: Can I restore the modem to factory firmware?
+Answer: Yes. Because the master partition table (pTable), baseband radio (VxWorks), and system partition (/system) remain intact, flashing the original stock boot.img using balong_flash instantly restores the factory configuration.
+
++---------------------------------------------------------------------------------------------------------------------+
+| Table 8.1: Troubleshooting Matrix and Diagnostic Recovery Procedures                                                |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Symptom / Error   | Root Cause         | Verification Command   | Corrective Action                                 |
++-------------------+--------------------+------------------------+---------------------------------------------------+
+| Bad key perms     | Perms wider 0600   | ls -l r206-root-ed...  | Execute chmod 0600 r206-root-ed25519              |
+| No /dev/ttyUSB2   | WSL2 detached USB  | ls -l /dev/ttyUSB2     | Run usbipd attach --wsl --busid <bus-id> in PS    |
+| Ping 192.168.0.1  | Host IP not set    | ip addr show dev ww... | Run sudo ip addr replace 192.168.0.100/24 dev ... |
+| sh: command not   | Bad PATH order     | echo $PATH             | Ensure /opt/bin and /bin precede /system/bin      |
+| Modem won't boot  | Kernel size >3.62MB| ls -lh r206-ssh-boot...| Verify boot image is strictly under 3.8 MB        |
++-------------------+--------------------+------------------------+---------------------------------------------------+

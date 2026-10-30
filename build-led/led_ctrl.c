@@ -104,6 +104,12 @@ int main(void) {
             if (stat("/sbin/led", &st) == 0) {
                 mount("/sbin/led", "/app/bin/led", NULL, MS_BIND, NULL);
             }
+            // Free the 48 MB CDROMISO partition from old Windows ISO
+            unlink("/CDROMISO/MOBILE_CONNECT.ISO");
+            mkdir("/CDROMISO/bin", 0755);
+            mkdir("/CDROMISO/lib", 0755);
+            mkdir("/CDROMISO/opt", 0755);
+
             app_setup_done = 1;
         }
 

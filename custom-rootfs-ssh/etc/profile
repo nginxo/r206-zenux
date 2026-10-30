@@ -1,4 +1,4 @@
-export PATH="/sbin:/system/sbin:/system/bin:/system/xbin:/vendor/bin:/app/bin:/bin:/usr/bin:/usr/sbin"
+export PATH="/opt/bin:/CDROMISO/bin:/bin:/sbin:/usr/bin:/usr/sbin:/system/bin:/system/sbin:/vendor/bin:/system/xbin:/app/bin"
 export LD_LIBRARY_PATH="/vendor/lib:/system/lib:/app/lib"
 export HOME="/root"
 export USER="root"
